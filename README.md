@@ -67,8 +67,10 @@ core/device-adapter.js  A COSTURA. SimAdapter (protótipo) e SafeboatAdapter
 public/                 Protótipo navegável fiel ao design do app (porta 8101):
                         mapa ao vivo, rastro, métricas, simulador de cenários.
 
-flutter/                Código Dart pronto para o dev anexar ao MAIN
-                        (models + service com os pontos de conexão marcados).
+flutter/                App Flutter COMPLETO (núcleo + simulação + adaptador +
+                        UI) — porte fiel do núcleo JS, com teste de paridade
+                        golden. Roda em demo e pluga o SAFEBOAT real trocando um
+                        adaptador. Ver flutter/README.md.
 
 test-scenarios.cjs      Bancada: roda cada cenário e verifica o esperado.
 test-sweep.cjs          Varredura de robustez: N sementes × 2 tipos de barco.
@@ -86,8 +88,17 @@ fechado). Ambos os caminhos estão previstos no `AnchorService` do Flutter.
 
 ---
 
-## Como rodar o protótipo
+## Como rodar
 
+**App Flutter** (deliverable principal — todo o código em Dart):
+```bash
+cd flutter
+flutter pub get
+flutter run            # Android / iOS / web / desktop
+flutter test           # paridade com o núcleo JS + bancada de cenários
+```
+
+**Protótipo web** (mesma lógica em JS, referência visual; publicado no GitHub Pages):
 ```bash
 node server.cjs        # http://localhost:8101   (launch.json: "safeboat-ancora")
 ```

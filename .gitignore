@@ -2,3 +2,11 @@ node_modules/
 *.log
 .DS_Store
 tmp-*.png
+
+# Flutter
+flutter/.dart_tool/
+flutter/build/
+flutter/.flutter-plugins
+flutter/.flutter-plugins-dependencies
+flutter/.packages
+flutter/pubspec.lock

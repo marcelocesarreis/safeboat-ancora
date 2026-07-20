@@ -1,0 +1,7 @@
+include: package:flutter_lints/flutter.yaml
+
+linter:
+  rules:
+    # o núcleo é porte fiel do JS; nomes e formas seguem a referência
+    prefer_const_constructors: false
+    avoid_print: false
