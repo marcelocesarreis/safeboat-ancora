@@ -1,0 +1,11 @@
+{
+  "name": "safeboat-ancora",
+  "version": "0.1.0",
+  "private": true,
+  "description": "SAFEBOAT — Âncora Virtual: vigília de fundeio com dispositivo de bordo simulado",
+  "scripts": {
+    "start": "node server.cjs",
+    "test": "node test-scenarios.cjs",
+    "sweep": "node test-sweep.cjs 20"
+  }
+}
