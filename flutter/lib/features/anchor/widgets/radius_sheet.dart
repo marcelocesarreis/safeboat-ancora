@@ -214,30 +214,28 @@ class _MiniMapPainter extends CustomPainter {
   final dynamic cfg;
   _MiniMapPainter({required this.radius, required this.cfg});
 
-  // UX: o BARCO fica ancorado no seu giro real (amarra + comprimento) e o círculo
-  // de alarme cresce/encolhe EM VOLTA dele conforme o slider. Um raio pequeno
-  // demais deixa o barco PARA FORA do anel (vermelho). Ver drawMiniMap no web.
+  // UX: a ESCALA é FIXA pelo giro real do barco — âncora e barco ficam PARADOS e
+  // só o círculo de alarme cresce/encolhe com o slider. Raio menor que o giro
+  // deixa o barco fora do anel (vermelho). Ver drawMiniMap no web.
   @override
   void paint(Canvas canvas, Size size) {
     canvas.drawRect(Offset.zero & size, Paint()..color = SB.water);
     final cx = size.width / 2;
-    final cy = size.height * 0.43; // acima do centro: sobra espaço p/ os rótulos
-    final budget = size.height * 0.38;
+    final cy = size.height * 0.42;
+    final swingPx = size.height * 0.17; // tamanho FIXO do giro do barco na tela
     final physical = swingRadius(rodeLength: cfg.rodeLength, depth: cfg.depth, bowRoller: cfg.bowRoller, boatLength: cfg.boatLength, gpsMargin: 0);
-    final maxR = math.max(radius, math.max(physical, 12.0)) * 1.15;
-    final scale = budget / maxR;
-    final rPx = radius * scale;
-    final phPx = physical * scale;
+    final scale = swingPx / math.max(physical, 1.0); // escala fixada pelo giro, NÃO pelo raio
+    final rPx = radius * scale; // só o anel muda com o slider
     final tight = radius < physical - 0.5;
     final ring = tight ? SB.red : SB.green;
-    final boatY = cy - phPx;
+    final boatY = cy - swingPx;
 
-    // giro natural do barco (referência fixa)
-    _dashedCircle(canvas, Offset(cx, cy), phPx, Paint()
+    // giro natural do barco — referência FIXA
+    _dashedCircle(canvas, Offset(cx, cy), swingPx, Paint()
       ..color = Colors.white.withOpacity(0.30)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.2, dash: 2, gap: 5);
-    // círculo de alarme (o slider) em volta do barco
+    // círculo de alarme (só ele muda com o slider)
     canvas.drawCircle(Offset(cx, cy), rPx, Paint()..color = ring.withOpacity(0.10));
     _dashedCircle(canvas, Offset(cx, cy), rPx, Paint()
       ..color = ring
@@ -256,19 +254,19 @@ class _MiniMapPainter extends CustomPainter {
     // barco no giro real, proa para a âncora
     canvas.drawCircle(Offset(cx, boatY), 5, Paint()..color = tight ? SB.red : Colors.white);
 
-    final bottom = cy + math.max(rPx, phPx);
+    // rótulos FIXOS no rodapé (o anel pode extrapolar a moldura em raios grandes)
     final t1 = TextPainter(
       text: TextSpan(text: 'raio ${radius.round()} m', style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700)),
       textDirection: TextDirection.ltr,
     )..layout();
-    t1.paint(canvas, Offset(cx - t1.width / 2, bottom + 10));
+    t1.paint(canvas, Offset(cx - t1.width / 2, size.height - 34));
     final margin = (radius - physical).round();
     final note = tight ? '⚠ menor que o giro do barco' : '$margin m de folga sobre o giro';
     final t2 = TextPainter(
       text: TextSpan(text: note, style: TextStyle(color: tight ? const Color(0xFFFF8F88) : SB.green, fontSize: 11, fontWeight: FontWeight.w600)),
       textDirection: TextDirection.ltr,
     )..layout();
-    t2.paint(canvas, Offset(cx - t2.width / 2, bottom + 28));
+    t2.paint(canvas, Offset(cx - t2.width / 2, size.height - 16));
   }
 
   void _dashedCircle(Canvas canvas, Offset c0, double r, Paint p, {required double dash, required double gap}) {
