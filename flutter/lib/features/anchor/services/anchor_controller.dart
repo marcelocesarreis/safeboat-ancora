@@ -56,6 +56,12 @@ class AnchorController extends ChangeNotifier {
   int get simElapsedMin => lastFix != null ? ((lastFix!.t - _sim.boat.t0) / 60000).round() : 0;
   Scenario get scenarioDef => scenarios[scenario]!;
 
+  // ---- condições a bordo (dados que o SAFEBOAT entrega no fundeio) ----
+  Env get _env => scenarios[scenario]!.env(_sim.boat.tMin);
+  double get windKnots => _env.windSpd * 1.94384;
+  double get windDir => _env.windDir;
+  bool get tideVazante => scenario == 'mare';
+
   // ---- laço de fix ----
   void _onFix(GpsFix fix) {
     lastFix = fix;

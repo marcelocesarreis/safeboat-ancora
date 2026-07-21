@@ -1,6 +1,8 @@
 /// SAFEBOAT — Tela da Âncora Virtual. Espelha o protótipo web:
 /// barra de status, cabeçalho, simulador de cenários, estado do alarme, mapa ao
-/// vivo, métricas, ações e histórico. Escuta o AnchorController (ChangeNotifier).
+/// vivo, métricas, ações, integração com os dados do SAFEBOAT e histórico.
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../core/anchor_core.dart';
@@ -9,6 +11,8 @@ import '../services/anchor_controller.dart';
 import '../widgets/anchor_map.dart';
 import '../widgets/radius_sheet.dart';
 import '../../../theme.dart';
+
+enum _CondLvl { ok, warn, danger }
 
 class AnchorScreen extends StatefulWidget {
   const AnchorScreen({super.key});
@@ -48,10 +52,21 @@ class _AnchorScreenState extends State<AnchorScreen> {
                   _alarmState(snap),
                   const SizedBox(height: 4),
                   _mapSection(snap),
+                  if (snap != null && snap.state == AnchorState.alarm) ...[
+                    const SizedBox(height: 14),
+                    _emergencyPanel(snap),
+                  ],
                   const SizedBox(height: 12),
                   _metrics(snap),
                   const SizedBox(height: 4),
                   _actions(snap),
+                  // integração com os demais dados do SAFEBOAT (só com âncora ativa)
+                  if (snap != null && snap.anchor != null && snap.state != AnchorState.idle) ...[
+                    const SizedBox(height: 18),
+                    _onboardSection(snap),
+                    const SizedBox(height: 18),
+                    _cameraSection(snap),
+                  ],
                   const SizedBox(height: 18),
                   _eventsHeader(),
                   _events(),
@@ -529,6 +544,187 @@ class _AnchorScreenState extends State<AnchorScreen> {
     );
   }
 
+  // ---------- integração: profundidade com "arrasto p/ raso" no garrando ----------
+  ({double depth, double shoal}) _shoaledDepth(AnchorSnapshot snap) {
+    final base = snap.depth ?? 6;
+    final shoal = snap.state == AnchorState.alarm
+        ? math.min(base * 0.55, snap.drift.accumulated * 0.06)
+        : 0.0;
+    return (depth: base - shoal, shoal: shoal);
+  }
+
+  String _cardinal(double deg) {
+    const dirs = ['N', 'NE', 'L', 'SE', 'S', 'SO', 'O', 'NO'];
+    return dirs[(((deg % 360) / 45).round()) % 8];
+  }
+
+  // ---------- integração: condições a bordo ----------
+  Widget _onboardSection(AnchorSnapshot snap) {
+    final windKn = c.windKnots.round();
+    final windDir = _cardinal(c.windDir);
+    final windWarn = windKn >= 25;
+    final sd = _shoaledDepth(snap);
+    final depthDanger = sd.shoal > 0.4;
+    final vazante = c.tideVazante;
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      _sectionHead('A BORDO', snap.state == AnchorState.alarm ? 'verifique antes de agir' : 'durante o fundeio'),
+      Wrap(spacing: 9, runSpacing: 9, children: [
+        _cond('🌊', 'Profundidade', sd.depth.toStringAsFixed(1).replaceAll('.', ','), 'm', depthDanger ? '▼ diminuindo' : '● estável', depthDanger ? _CondLvl.danger : _CondLvl.ok),
+        _cond('💨', 'Vento', '$windKn', 'nós', '${windWarn ? '▲' : '●'} $windDir', windWarn ? _CondLvl.warn : _CondLvl.ok),
+        _cond('🌙', 'Maré', vazante ? 'Vazante' : 'Estável', '', vazante ? '▼ baixando' : '● scope ok', _CondLvl.ok),
+        _cond('🔋', 'Baterias', '12,8', 'V', '● guincho ok', _CondLvl.ok),
+        _cond('💧', 'Porão', 'Seco', '', '● bomba ok', _CondLvl.ok),
+      ]),
+    ]);
+  }
+
+  Widget _cond(String icon, String label, String val, String unit, String sub, _CondLvl lvl) {
+    final (bg, subColor, border) = switch (lvl) {
+      _CondLvl.danger => (SB.red.withOpacity(0.12), const Color(0xFFFF8F88), SB.red.withOpacity(0.45)),
+      _CondLvl.warn => (SB.amber.withOpacity(0.10), SB.amber, SB.amber.withOpacity(0.35)),
+      _CondLvl.ok => (SB.card, SB.green, Colors.transparent),
+    };
+    return Container(
+      width: (MediaQuery.of(context).size.width.clamp(0.0, 430.0) - 58) / 3,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(13), border: Border.all(color: border)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Container(width: 22, height: 22, decoration: BoxDecoration(color: SB.card3, borderRadius: BorderRadius.circular(7)), alignment: Alignment.center, child: Text(icon, style: const TextStyle(fontSize: 12))),
+          const SizedBox(width: 6),
+          Flexible(child: Text(label, style: const TextStyle(fontSize: 10.5, color: SB.muted, fontWeight: FontWeight.w600), maxLines: 1, overflow: TextOverflow.ellipsis)),
+        ]),
+        const SizedBox(height: 7),
+        Text.rich(TextSpan(style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700), children: [
+          TextSpan(text: val),
+          if (unit.isNotEmpty) TextSpan(text: ' $unit', style: const TextStyle(fontSize: 11, color: SB.muted, fontWeight: FontWeight.w600)),
+        ]), maxLines: 1, overflow: TextOverflow.ellipsis),
+        const SizedBox(height: 4),
+        Text(sub, style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: subColor)),
+      ]),
+    );
+  }
+
+  // ---------- integração: câmera ----------
+  Widget _cameraSection(AnchorSnapshot snap) {
+    final alarm = snap.state == AnchorState.alarm;
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      _sectionHead('CÂMERAS', 'Convés · ao vivo'),
+      Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: alarm ? [BoxShadow(color: SB.red.withOpacity(0.4), blurRadius: 30, offset: const Offset(0, 8))] : null,
+          border: alarm ? Border.all(color: SB.red, width: 2) : null,
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: AspectRatio(
+            aspectRatio: 16 / 9,
+            child: Stack(fit: StackFit.expand, children: [
+              CustomPaint(painter: _DeckCamPainter(alarm)),
+              Container(decoration: const BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Color(0x40101A30), Colors.transparent, Color(0xCC101A30)], stops: [0, 0.5, 1]))),
+              Positioned(top: 10, left: 10, child: _liveBadge()),
+              if (alarm) Positioned(top: 10, right: 10, child: Container(padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4), decoration: BoxDecoration(color: SB.red, borderRadius: BorderRadius.circular(20)), child: const Text('👁 VER AGORA', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w700)))),
+              const Positioned(left: 12, bottom: 10, child: Text('Convés', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700))),
+            ]),
+          ),
+        ),
+      ),
+    ]);
+  }
+
+  Widget _liveBadge() => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(color: SB.bg.withOpacity(0.72), borderRadius: BorderRadius.circular(20)),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Container(width: 6, height: 6, decoration: const BoxDecoration(color: SB.red, shape: BoxShape.circle)),
+          const SizedBox(width: 6),
+          const Text('AO VIVO', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 0.8)),
+        ]),
+      );
+
+  // ---------- integração: painel de emergência ----------
+  Widget _emergencyPanel(AnchorSnapshot snap) {
+    final drift = snap.drift;
+    final dir = _cardinal(drift.significant ? drift.bearing : snap.bearing);
+    final dragged = math.max(drift.accumulated, math.max(0.0, snap.distance - snap.radius)).round();
+    final sd = _shoaledDepth(snap);
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [SB.red.withOpacity(0.16), SB.red.withOpacity(0.06)]),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: SB.red.withOpacity(0.5)),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Container(width: 9, height: 9, decoration: const BoxDecoration(color: SB.red, shape: BoxShape.circle)),
+          const SizedBox(width: 9),
+          const Text('GARRANDO — AJA AGORA', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
+          const Spacer(),
+          Text('há ${snap.outsideFor}s', style: const TextStyle(fontSize: 11, color: Color(0xFFFFB0AB), fontWeight: FontWeight.w600)),
+        ]),
+        const SizedBox(height: 12),
+        Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(11),
+            child: SizedBox(width: 112, height: 84, child: Stack(fit: StackFit.expand, children: [
+              CustomPaint(painter: _DeckCamPainter(true)),
+              Positioned(top: 5, left: 5, child: _liveBadge()),
+            ])),
+          ),
+          const SizedBox(width: 10),
+          Expanded(child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            _emFact('🧭', 'Deriva ', '$dir · ${drift.rate.toStringAsFixed(1)} m/min', false),
+            const SizedBox(height: 6),
+            _emFact('📏', 'Já saiu ', '$dragged m do círculo', false),
+            const SizedBox(height: 6),
+            _emFact('🌊', 'Fundo ', '${sd.depth.toStringAsFixed(1).replaceAll('.', ',')} m e caindo', true),
+          ])),
+        ]),
+        const SizedBox(height: 12),
+        Row(children: [
+          Expanded(child: _emBtn('🔕 Silenciar', Colors.white, SB.bg, c.acknowledge)),
+          const SizedBox(width: 8),
+          Expanded(child: _emBtn('👁 Ver câmeras', Colors.white.withOpacity(0.14), Colors.white, () {})),
+        ]),
+      ]),
+    );
+  }
+
+  Widget _emFact(String icon, String label, String value, bool warn) {
+    return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      SizedBox(width: 22, child: Text(icon, style: const TextStyle(fontSize: 12), textAlign: TextAlign.center)),
+      const SizedBox(width: 6),
+      Expanded(child: Text.rich(TextSpan(
+        style: TextStyle(fontSize: 12.5, height: 1.25, color: warn ? const Color(0xFFFFD0CC) : Colors.white),
+        children: [TextSpan(text: label), TextSpan(text: value, style: const TextStyle(fontWeight: FontWeight.w700))],
+      ))),
+    ]);
+  }
+
+  Widget _emBtn(String label, Color bg, Color fg, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 11),
+        decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(11)),
+        alignment: Alignment.center,
+        child: Text(label, style: TextStyle(color: fg, fontSize: 13, fontWeight: FontWeight.w700)),
+      ),
+    );
+  }
+
+  Widget _sectionHead(String title, String sub) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [
+        Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, letterSpacing: .5)),
+        Text(sub, style: const TextStyle(fontSize: 12, color: SB.muted)),
+      ]),
+    );
+  }
+
   // ---------- bottom nav ----------
   Widget _bottomNav() {
     return Positioned(
@@ -564,4 +760,45 @@ class _NavItem extends StatelessWidget {
       Text(label, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: active ? SB.bg : const Color(0xFF9AA3B8))),
     ]);
   }
+}
+
+/// Cena estilizada da câmera de convés (visão noturna da proa com luz de fundeio).
+class _DeckCamPainter extends CustomPainter {
+  final bool alarm;
+  _DeckCamPainter(this.alarm);
+
+  @override
+  void paint(Canvas canvas, Size s) {
+    final sky = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [alarm ? const Color(0xFF2A1C2C) : const Color(0xFF12233B), const Color(0xFF0A1424)],
+      ).createShader(Offset.zero & s);
+    canvas.drawRect(Offset.zero & s, sky);
+
+    final hy = s.height * 0.6;
+    canvas.drawRect(Rect.fromLTWH(0, hy, s.width, s.height - hy), Paint()..color = const Color(0xFF0B1A2E));
+    canvas.drawLine(Offset(0, hy), Offset(s.width, hy), Paint()..color = const Color(0xFF22405F)..strokeWidth = 1);
+    // reflexo
+    canvas.drawOval(Rect.fromCenter(center: Offset(s.width * 0.7, s.height * 0.8), width: s.width * 0.4, height: s.height * 0.08), Paint()..color = const Color(0xFF1A3350).withOpacity(0.5));
+    // pulpito/proa
+    final rail = Paint()
+      ..color = const Color(0xFF2B3F5C)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3;
+    final path = Path()
+      ..moveTo(s.width * 0.05, s.height)
+      ..lineTo(s.width * 0.05, s.height * 0.72)
+      ..quadraticBezierTo(s.width * 0.5, s.height * 0.57, s.width * 0.95, s.height * 0.72)
+      ..lineTo(s.width * 0.95, s.height);
+    canvas.drawPath(path, rail);
+    canvas.drawLine(Offset(s.width * 0.05, s.height * 0.72), Offset(s.width * 0.95, s.height * 0.72), Paint()..color = const Color(0xFF2B3F5C)..strokeWidth = 2);
+    // luz de fundeio
+    canvas.drawCircle(Offset(s.width * 0.5, s.height * 0.5), s.width * 0.05, Paint()..color = const Color(0xFFFFE08A).withOpacity(0.22));
+    canvas.drawCircle(Offset(s.width * 0.5, s.height * 0.5), s.width * 0.02, Paint()..color = const Color(0xFFFFE08A));
+  }
+
+  @override
+  bool shouldRepaint(covariant _DeckCamPainter old) => old.alarm != alarm;
 }
