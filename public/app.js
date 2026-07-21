@@ -671,20 +671,43 @@ function boatIcon(x, y, heading, state) {
 
 // -------------------------------------------------------- mini-mapa do sheet
 
+/**
+ * Mini-mapa do sheet. Ideia da UX: o BARCO fica ancorado no seu giro real
+ * (alcance da amarra + comprimento do barco) e o círculo de alarme cresce/encolhe
+ * EM VOLTA dele conforme o slider. Assim, mexer no raio move visivelmente o anel
+ * em relação ao barco fixo — e um raio pequeno demais deixa o barco PARA FORA do
+ * anel (vermelho), tornando o erro óbvio. (Antes o barco era preso ao próprio
+ * raio, então acima do valor automático nada mudava na tela e a relação se perdia.)
+ */
 function drawMiniMap(radius, autoRadius) {
   const svg = document.getElementById('miniMap')
   const W = 400, H = 275
-  const cx = W / 2, cy = H / 2
-  const scale = (H * 0.42) / Math.max(radius, autoRadius, 20)
+  const cx = W / 2, cy = 118            // um pouco acima do centro: sobra espaço p/ rótulos
+  const budget = 104                     // raio máximo em px dentro da moldura
+  const physical = swingRadius(Object.assign({}, cfg, { gpsMargin: 0 })) // giro real do barco
+  const maxR = Math.max(radius, physical, 12) * 1.15
+  const scale = budget / maxR
   const rPx = radius * scale
+  const phPx = physical * scale
+  const tight = radius < physical - 0.5  // raio menor que o giro natural → apertado
+  const ring = tight ? '#E0524B' : '#A5CB74'
+  const boatY = cy - phPx
+
   let out = `<rect width="${W}" height="${H}" fill="var(--water)"/>`
-  out += `<circle cx="${cx}" cy="${cy}" r="${rPx}" fill="#A5CB74" fill-opacity="0.10" stroke="#A5CB74" stroke-width="2.5" stroke-dasharray="7 7"/>`
-  // limite físico da amarra (o que a amarra explica), para o usuário ver a folga
-  const physical = swingRadius(Object.assign({}, cfg, { gpsMargin: 0 })) * scale
-  if (physical < rPx) out += `<circle cx="${cx}" cy="${cy}" r="${physical}" fill="none" stroke="rgba(255,255,255,.25)" stroke-width="1" stroke-dasharray="3 5"/>`
+  // giro natural do barco (onde ele de fato fica com a maré/vento) — referência fixa
+  out += `<circle cx="${cx}" cy="${cy}" r="${phPx}" fill="rgba(255,255,255,.05)" stroke="rgba(255,255,255,.30)" stroke-width="1.2" stroke-dasharray="2 5"/>`
+  // círculo de alarme (o que o slider controla) — cresce/encolhe em volta do barco
+  out += `<circle cx="${cx}" cy="${cy}" r="${rPx}" fill="${ring}" fill-opacity="0.10" stroke="${ring}" stroke-width="2.5" stroke-dasharray="7 7"/>`
+  // amarra do fundeadouro até o barco
+  out += `<line x1="${cx}" y1="${cy}" x2="${cx}" y2="${boatY}" stroke="rgba(255,255,255,.4)" stroke-width="1.5" stroke-dasharray="2 4"/>`
   out += anchorPin(cx, cy)
-  out += boatIcon(cx, cy - rPx * 0.7, 0, 'armed')
-  out += `<text x="${cx}" y="${cy + rPx + 18}" fill="#fff" fill-opacity=".7" font-size="12" text-anchor="middle">raio ${Math.round(radius)} m</text>`
+  out += boatIcon(cx, boatY, 180, tight ? 'alarm' : 'armed')  // proa apontando p/ a âncora
+
+  const bottom = cy + Math.max(rPx, phPx)
+  out += `<text x="${cx}" y="${bottom + 22}" fill="#fff" fill-opacity=".9" font-size="13" font-weight="700" text-anchor="middle">raio ${Math.round(radius)} m</text>`
+  const margin = Math.round(radius - physical)
+  const note = tight ? '⚠ menor que o giro do barco' : `${margin} m de folga sobre o giro`
+  out += `<text x="${cx}" y="${bottom + 39}" fill="${tight ? '#ff8f88' : '#A5CB74'}" font-size="11" font-weight="600" text-anchor="middle">${note}</text>`
   svg.innerHTML = out
 }
 

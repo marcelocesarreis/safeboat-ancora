@@ -214,39 +214,61 @@ class _MiniMapPainter extends CustomPainter {
   final dynamic cfg;
   _MiniMapPainter({required this.radius, required this.cfg});
 
+  // UX: o BARCO fica ancorado no seu giro real (amarra + comprimento) e o círculo
+  // de alarme cresce/encolhe EM VOLTA dele conforme o slider. Um raio pequeno
+  // demais deixa o barco PARA FORA do anel (vermelho). Ver drawMiniMap no web.
   @override
   void paint(Canvas canvas, Size size) {
     canvas.drawRect(Offset.zero & size, Paint()..color = SB.water);
-    final cx = size.width / 2, cy = size.height / 2;
+    final cx = size.width / 2;
+    final cy = size.height * 0.43; // acima do centro: sobra espaço p/ os rótulos
+    final budget = size.height * 0.38;
     final physical = swingRadius(rodeLength: cfg.rodeLength, depth: cfg.depth, bowRoller: cfg.bowRoller, boatLength: cfg.boatLength, gpsMargin: 0);
-    final scale = (size.height * 0.42) / math.max(radius, math.max(physical, 20));
+    final maxR = math.max(radius, math.max(physical, 12.0)) * 1.15;
+    final scale = budget / maxR;
     final rPx = radius * scale;
-    final ringPaint = Paint()
-      ..color = SB.green
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.5;
-    canvas.drawCircle(Offset(cx, cy), rPx, Paint()..color = SB.green.withOpacity(0.10));
-    _dashedCircle(canvas, Offset(cx, cy), rPx, ringPaint, dash: 7, gap: 7);
     final phPx = physical * scale;
-    if (phPx < rPx) {
-      _dashedCircle(canvas, Offset(cx, cy), phPx, Paint()
-        ..color = Colors.white.withOpacity(0.25)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1, dash: 3, gap: 5);
-    }
-    // barco no topo do círculo
-    canvas.drawCircle(Offset(cx, cy - rPx * 0.7), 5, Paint()..color = Colors.white);
-    // pino da âncora no centro
+    final tight = radius < physical - 0.5;
+    final ring = tight ? SB.red : SB.green;
+    final boatY = cy - phPx;
+
+    // giro natural do barco (referência fixa)
+    _dashedCircle(canvas, Offset(cx, cy), phPx, Paint()
+      ..color = Colors.white.withOpacity(0.30)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.2, dash: 2, gap: 5);
+    // círculo de alarme (o slider) em volta do barco
+    canvas.drawCircle(Offset(cx, cy), rPx, Paint()..color = ring.withOpacity(0.10));
+    _dashedCircle(canvas, Offset(cx, cy), rPx, Paint()
+      ..color = ring
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.5, dash: 7, gap: 7);
+    // amarra âncora→barco
+    canvas.drawLine(Offset(cx, cy), Offset(cx, boatY), Paint()
+      ..color = Colors.white.withOpacity(0.4)
+      ..strokeWidth = 1.5);
+    // pino da âncora
     canvas.drawCircle(Offset(cx, cy), 8, Paint()..color = SB.bg);
     canvas.drawCircle(Offset(cx, cy), 8, Paint()
       ..color = SB.green
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2);
-    final tp = TextPainter(
-      text: TextSpan(text: 'raio ${radius.round()} m', style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 12)),
+    // barco no giro real, proa para a âncora
+    canvas.drawCircle(Offset(cx, boatY), 5, Paint()..color = tight ? SB.red : Colors.white);
+
+    final bottom = cy + math.max(rPx, phPx);
+    final t1 = TextPainter(
+      text: TextSpan(text: 'raio ${radius.round()} m', style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700)),
       textDirection: TextDirection.ltr,
     )..layout();
-    tp.paint(canvas, Offset(cx - tp.width / 2, cy + rPx + 6));
+    t1.paint(canvas, Offset(cx - t1.width / 2, bottom + 10));
+    final margin = (radius - physical).round();
+    final note = tight ? '⚠ menor que o giro do barco' : '$margin m de folga sobre o giro';
+    final t2 = TextPainter(
+      text: TextSpan(text: note, style: TextStyle(color: tight ? const Color(0xFFFF8F88) : SB.green, fontSize: 11, fontWeight: FontWeight.w600)),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    t2.paint(canvas, Offset(cx - t2.width / 2, bottom + 28));
   }
 
   void _dashedCircle(Canvas canvas, Offset c0, double r, Paint p, {required double dash, required double gap}) {
