@@ -107,6 +107,61 @@
   .sec-head h2{font-size:18px;font-weight:700;letter-spacing:.04em}
   .sec-head .link{font-size:12px;color:var(--muted);font-weight:600}
 
+  /* ---------- integração SAFEBOAT: painel de emergência (garrando) ---------- */
+  .emergency{background:linear-gradient(180deg,rgba(224,82,75,.16),rgba(224,82,75,.06));border:1px solid rgba(224,82,75,.5);border-radius:16px;padding:14px;margin-top:14px}
+  .emergency .em-head{display:flex;align-items:center;gap:9px;margin-bottom:12px}
+  .emergency .em-head .dot{width:9px;height:9px;border-radius:50%;background:var(--red);animation:pulse 1s infinite;flex-shrink:0}
+  .emergency .em-head h3{font-size:15px;font-weight:800;letter-spacing:.02em}
+  .emergency .em-head .since{margin-left:auto;font-size:11px;color:#ffb0ab;font-weight:600}
+  .em-row{display:flex;gap:10px;margin-bottom:12px}
+  .em-cam{width:112px;flex-shrink:0;border-radius:11px;overflow:hidden;position:relative;aspect-ratio:4/3;background:#0c1425}
+  .em-cam img{width:100%;height:100%;object-fit:cover;display:block}
+  .em-cam .lv{position:absolute;top:5px;left:5px;background:rgba(14,21,38,.75);border-radius:20px;padding:2px 7px;font-size:8px;font-weight:700;letter-spacing:.08em;display:flex;align-items:center;gap:4px}
+  .em-cam .lv i{width:5px;height:5px;border-radius:50%;background:var(--red);display:inline-block;animation:pulse 1.3s infinite}
+  .em-cam .cap{position:absolute;bottom:4px;left:6px;font-size:9px;font-weight:600;text-shadow:0 1px 3px #000}
+  .em-facts{flex:1;display:flex;flex-direction:column;gap:6px;justify-content:center}
+  .em-fact{display:flex;align-items:center;gap:8px;font-size:12.5px}
+  .em-fact .fi{width:22px;text-align:center;flex-shrink:0}
+  .em-fact b{font-weight:700}
+  .em-fact.warn{color:#ffd0cc}
+  .em-actions{display:flex;gap:8px}
+  .em-actions button{flex:1;padding:11px;border-radius:11px;border:none;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px}
+  .em-actions .silence{background:#fff;color:#1E2A49}
+  .em-actions .see{background:rgba(255,255,255,.14);color:#fff}
+
+  /* ---------- integração: condições a bordo ---------- */
+  .onboard{display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:9px}
+  .cond{background:var(--card);border-radius:13px;padding:11px 12px;position:relative;overflow:hidden;transition:.3s}
+  .cond .top{display:flex;align-items:center;gap:6px;margin-bottom:7px}
+  .cond .ic{width:22px;height:22px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:12px;background:var(--card-3)}
+  .cond .lbl{font-size:10.5px;color:var(--muted);font-weight:600;letter-spacing:.02em}
+  .cond .val{font-size:19px;font-weight:700;line-height:1;display:flex;align-items:baseline;gap:3px}
+  .cond .val small{font-size:11px;color:var(--muted);font-weight:600}
+  .cond .sub{font-size:10.5px;font-weight:600;margin-top:4px;display:flex;align-items:center;gap:4px}
+  .cond.ok .sub{color:var(--green)}
+  .cond.warn{background:linear-gradient(180deg,rgba(255,215,56,.1),transparent);box-shadow:inset 0 0 0 1px rgba(255,215,56,.35)}
+  .cond.warn .sub{color:var(--amber)}
+  .cond.danger{background:linear-gradient(180deg,rgba(224,82,75,.14),transparent);box-shadow:inset 0 0 0 1px rgba(224,82,75,.45)}
+  .cond.danger .sub{color:#ff8f88}
+  .cond.danger .ic{background:var(--red-soft)}
+
+  /* ---------- integração: câmera ---------- */
+  .cam-card{background:var(--card);border-radius:16px;overflow:hidden;position:relative;cursor:pointer}
+  .cam-card .thumb{aspect-ratio:16/9;position:relative;background:#0c1425;overflow:hidden}
+  .cam-card .thumb img{width:100%;height:100%;object-fit:cover;display:block}
+  .cam-card .fade{position:absolute;inset:0;background:linear-gradient(180deg,rgba(16,26,48,.25) 0%,transparent 40%,transparent 55%,rgba(16,26,48,.8) 100%)}
+  .cam-card .live{position:absolute;top:10px;left:10px;background:rgba(14,21,38,.72);backdrop-filter:blur(4px);padding:4px 10px;border-radius:20px;font-size:10px;font-weight:700;letter-spacing:.08em;display:flex;align-items:center;gap:6px}
+  .cam-card .live i{width:6px;height:6px;border-radius:50%;background:var(--red);animation:pulse 1.4s infinite}
+  .cam-card .meta{position:absolute;left:12px;bottom:10px;right:12px;display:flex;align-items:center;justify-content:space-between}
+  .cam-card .meta .nm{font-size:14px;font-weight:700}
+  .cam-card.alert{box-shadow:0 0 0 2px var(--red),0 8px 30px rgba(224,82,75,.4)}
+  .cam-card .cta{position:absolute;top:10px;right:10px;background:var(--red);color:#fff;font-size:10px;font-weight:700;padding:4px 9px;border-radius:20px;display:flex;align-items:center;gap:4px}
+  .sec-sub{font-size:12px;color:var(--muted);font-weight:500}
+
+  /* ---------- nota "arrastar depois" no sheet ---------- */
+  .drop-note{display:flex;gap:9px;font-size:12px;color:#C7D0E4;line-height:1.5;background:var(--green-soft);border-radius:11px;padding:11px 13px;margin-top:10px}
+  .drop-note b{color:var(--green)}
+
   /* ---------- eventos ---------- */
   .events{display:flex;flex-direction:column;gap:2px}
   .event{display:flex;gap:11px;padding:9px 2px;align-items:flex-start;border-bottom:1px solid rgba(255,255,255,.05)}
@@ -245,11 +300,26 @@
     <!-- botão para reabrir a edição depois de armado -->
     <button class="edit-anchor-btn hidden" id="editAnchorBtn" onclick="startEdit()">✎ Editar posição da âncora</button>
 
+    <!-- painel de emergência (integra câmera + sensores quando garrando) -->
+    <div id="emergency"></div>
+
     <!-- métricas -->
     <div class="metrics" id="metrics"></div>
 
     <!-- ações -->
     <div id="actions"></div>
+
+    <!-- integração: condições a bordo (dados do SAFEBOAT no fundeio) -->
+    <div id="onboardSection" class="hidden">
+      <div class="sec-head"><h2>A BORDO</h2><span class="sec-sub" id="onboardSub">durante o fundeio</span></div>
+      <div class="onboard" id="onboard"></div>
+    </div>
+
+    <!-- integração: câmeras do SAFEBOAT -->
+    <div id="cameraSection" class="hidden">
+      <div class="sec-head"><h2>CÂMERAS</h2><span class="sec-sub">Convés · ao vivo</span></div>
+      <div id="cameras"></div>
+    </div>
 
     <!-- eventos -->
     <div class="sec-head"><h2>HISTÓRICO</h2><span class="link" id="evtCount"></span></div>
@@ -295,8 +365,12 @@
       <input id="radiusSlider" type="range" min="15" max="120" value="52" oninput="onRadiusInput(this.value)">
     </div>
 
-    <button class="pill-btn green" onclick="confirmArm()">Lançar âncora aqui</button>
-    <button class="pill-btn" style="margin-top:8px" onclick="closeSheet()">Cancelar</button>
+    <button class="pill-btn green" onclick="confirmArm()">Soltar âncora aqui</button>
+    <div class="drop-note">
+      <span>📍</span>
+      <span>Depois de soltar, você poderá <b>arrastar a âncora no mapa</b> até o ponto exato onde ela caiu — o normal ao ligar o alarme já fundeado.</span>
+    </div>
+    <button class="pill-btn" style="margin-top:10px" onclick="closeSheet()">Cancelar</button>
   </div>
 </div>
 

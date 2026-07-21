@@ -339,6 +339,7 @@ function render(snap, fix) {
 
   drawMap(snap, fix)
   drawMetrics(snap)
+  drawIntegration(snap, fix)   // A BORDO + câmeras + emergência (dados do SAFEBOAT)
   drawEvents()
   document.getElementById('simTime').textContent = 't+' + Math.round((fix.t - adapter.boat.t0) / 60000) + ' min'
   document.getElementById('scenDesc').textContent = SCENARIOS[scenario].desc
@@ -411,6 +412,132 @@ function drawMetrics(snap) {
     </div>`
 }
 function gaugeColor(u) { return u > 1 ? '#E0524B' : u > 0.85 ? '#FFD738' : '#A5CB74' }
+
+// ------------------------------ integração com os demais dados do SAFEBOAT
+
+// cache por container: só toca o DOM quando o HTML muda de fato (evita reiniciar
+// as animações de pulso a cada frame)
+const _htmlCache = {}
+function setHTML(id, html) {
+  if (_htmlCache[id] === html) return
+  _htmlCache[id] = html
+  document.getElementById(id).innerHTML = html
+}
+
+const CARDINAIS = ['N', 'NE', 'L', 'SE', 'S', 'SO', 'O', 'NO']
+function cardinal(deg) { return CARDINAIS[Math.round(((deg % 360) / 45)) % 8] }
+
+/**
+ * A vigília de âncora não vive sozinha: quando o alarme está ativo, os demais
+ * sensores do SAFEBOAT ganham significado. Este bloco orquestra a escalada:
+ *   VIGIANDO  → tira calma de "condições a bordo" (sonda, vento, maré, baterias, porão)
+ *   ATENÇÃO   → o que está mudando ganha destaque
+ *   GARRANDO  → central de emergência: VER (câmera) · ENTENDER (deriva, profundidade) · AGIR
+ */
+function drawIntegration(snap, fix) {
+  const active = !!snap.anchor && snap.state !== 'idle'
+  document.getElementById('onboardSection').classList.toggle('hidden', !active)
+  document.getElementById('cameraSection').classList.toggle('hidden', !active)
+  drawEmergency(snap, fix)
+  if (!active) { setHTML('onboard', ''); setHTML('cameras', ''); return }
+  drawOnboard(snap, fix)
+  drawCameras(snap)
+}
+
+function condTile(icon, label, val, unit, sub, cls) {
+  return `<div class="cond ${cls}">
+    <div class="top"><div class="ic">${icon}</div><div class="lbl">${label}</div></div>
+    <div class="val">${val}${unit ? `<small>${unit}</small>` : ''}</div>
+    <div class="sub">${sub}</div>
+  </div>`
+}
+
+/** profundidade sob a quilha, com "arrasto p/ raso" sintético durante a garra
+ * (demo: um barco que garra costuma ir para águas mais rasas) */
+function shoaledDepth(snap) {
+  const base = snap.depth || 6
+  const shoal = snap.state === 'alarm' ? Math.min(base * 0.55, (snap.drift.accumulated || 0) * 0.06) : 0
+  return { depth: base - shoal, shoal }
+}
+
+function drawOnboard(snap, fix) {
+  const truth = (fix && fix.truth) || {}
+  const windKn = Math.round((truth.windSpd || 0) * 1.94384)
+  const windDir = cardinal(truth.windDir || 0)
+  const { depth, shoal } = shoaledDepth(snap)
+  const depthDanger = shoal > 0.4
+  const windWarn = windKn >= 25
+
+  const mareVazante = scenario === 'mare'
+  const tiles = [
+    condTile('🌊', 'Profundidade', depth.toFixed(1).replace('.', ','), ' m',
+      depthDanger ? '▼ diminuindo' : '● estável', depthDanger ? 'danger' : 'ok'),
+    condTile('💨', 'Vento', windKn, ' nós',
+      (windWarn ? '▲ ' : '● ') + windDir, windWarn ? 'warn' : 'ok'),
+    condTile('🌙', 'Maré', mareVazante ? 'Vazante' : 'Estável', '',
+      mareVazante ? '▼ baixando' : '● scope ok', 'ok'),
+    condTile('🔋', 'Baterias', '12,8', ' V', '● guincho ok', 'ok'),
+    condTile('💧', 'Porão', 'Seco', '', '● bomba ok', 'ok'),
+  ]
+  document.getElementById('onboardSub').textContent =
+    snap.state === 'alarm' ? 'verifique antes de agir' : 'durante o fundeio'
+  setHTML('onboard', tiles.join(''))
+}
+
+function drawCameras(snap) {
+  const alarm = snap.state === 'alarm'
+  setHTML('cameras', `
+    <div class="cam-card ${alarm ? 'alert' : ''}" onclick="scrollCam()">
+      <div class="thumb">${deckCamSVG(alarm)}<div class="fade"></div>
+        <div class="live"><i></i>AO VIVO</div>
+        ${alarm ? '<div class="cta">👁 VER AGORA</div>' : ''}
+        <div class="meta"><span class="nm">Convés</span><span style="font-size:11px;color:#C7D0E4">HD · proa</span></div>
+      </div>
+    </div>`)
+}
+
+function drawEmergency(snap, fix) {
+  if (!snap || snap.state !== 'alarm') { setHTML('emergency', ''); return }
+  const drift = snap.drift || {}
+  const dir = cardinal(drift.significant ? drift.brg : snap.bearing)
+  const dragged = Math.round(Math.max(drift.accumulated || 0, Math.max(0, snap.distance - snap.radius)))
+  const { depth } = shoaledDepth(snap)
+  setHTML('emergency', `
+    <div class="emergency">
+      <div class="em-head"><span class="dot"></span><h3>GARRANDO — AJA AGORA</h3><span class="since">há ${Math.round(snap.outsideFor || 0)}s</span></div>
+      <div class="em-row">
+        <div class="em-cam">${deckCamSVG(true)}<div class="lv"><i></i>AO VIVO</div><div class="cap">Convés</div></div>
+        <div class="em-facts">
+          <div class="em-fact"><span class="fi">🧭</span>Deriva <b>${dir} · ${(drift.rate || 0).toFixed(1)} m/min</b></div>
+          <div class="em-fact"><span class="fi">📏</span>Já saiu <b>${dragged} m</b> do círculo</div>
+          <div class="em-fact warn"><span class="fi">🌊</span>Fundo <b>${depth.toFixed(1).replace('.', ',')} m</b> e caindo</div>
+        </div>
+      </div>
+      <div class="em-actions">
+        <button class="silence" onclick="ack()">🔕 Silenciar</button>
+        <button class="see" onclick="scrollCam()">👁 Ver câmeras</button>
+      </div>
+    </div>`)
+}
+
+function scrollCam() {
+  document.getElementById('cameraSection').scrollIntoView({ behavior: 'smooth', block: 'center' })
+}
+
+/** cena estilizada da câmera de convés (visão noturna da proa com luz de fundeio) */
+function deckCamSVG(alarm) {
+  return `<svg viewBox="0 0 160 120" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+    <defs><linearGradient id="sky${alarm ? 'a' : 'n'}" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="${alarm ? '#2a1c2c' : '#12233b'}"/><stop offset="1" stop-color="#0a1424"/></linearGradient></defs>
+    <rect width="160" height="120" fill="url(#sky${alarm ? 'a' : 'n'})"/>
+    <rect y="72" width="160" height="48" fill="#0b1a2e"/>
+    <line x1="0" y1="72" x2="160" y2="72" stroke="#22405f" stroke-width="1"/>
+    <ellipse cx="112" cy="96" rx="30" ry="5" fill="#1a3350" opacity="0.5"/>
+    <path d="M8 120 L8 86 Q80 68 152 86 L152 120" fill="none" stroke="#2b3f5c" stroke-width="3"/>
+    <line x1="8" y1="86" x2="152" y2="86" stroke="#2b3f5c" stroke-width="2"/>
+    <circle cx="80" cy="60" r="3" fill="#ffe08a"/><circle cx="80" cy="60" r="8" fill="#ffe08a" opacity="0.22"/>
+  </svg>`
+}
 
 // -------------------------------------------------------------- histórico
 
