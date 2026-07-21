@@ -233,23 +233,77 @@ class _AnchorScreenState extends State<AnchorScreen> {
   Widget _mapSection(AnchorSnapshot? snap) {
     final acc = c.lastFix?.accuracy ?? 0;
     final gpsColor = acc > 25 ? SB.red : acc > 12 ? SB.amber : SB.green;
-    return Stack(children: [
-      AnchorMap(c: c, viewSpan: viewSpan),
-      Positioned(
-        top: 10, left: 10, right: 10,
-        child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-          _mapBadge('dist.', snap?.anchor != null ? '${snap!.distance.round()} m' : '—', Colors.white),
-          _mapBadge('GPS', '±${acc.round()} m', gpsColor),
-        ]),
-      ),
-      Positioned(
-        bottom: 10, right: 10,
-        child: Column(children: [
-          _zoomBtn('+', () => setState(() => viewSpan = (viewSpan / 1.3).clamp(50, 600))),
-          const SizedBox(height: 6),
-          _zoomBtn('−', () => setState(() => viewSpan = (viewSpan * 1.3).clamp(50, 600))),
-        ]),
-      ),
+    return Column(children: [
+      Stack(children: [
+        Container(
+          decoration: c.editMode
+              ? BoxDecoration(borderRadius: BorderRadius.circular(16), border: Border.all(color: SB.green, width: 2))
+              : null,
+          child: AnchorMap(c: c, viewSpan: viewSpan),
+        ),
+        Positioned(
+          top: 10, left: 10, right: 10,
+          child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+            _mapBadge('dist.', snap?.anchor != null ? '${snap!.distance.round()} m' : '—', Colors.white),
+            _mapBadge('GPS', '±${acc.round()} m', gpsColor),
+          ]),
+        ),
+        if (!c.editMode)
+          Positioned(
+            bottom: 10, right: 10,
+            child: Column(children: [
+              _zoomBtn('+', () => setState(() => viewSpan = (viewSpan / 1.3).clamp(50, 600))),
+              const SizedBox(height: 6),
+              _zoomBtn('−', () => setState(() => viewSpan = (viewSpan * 1.3).clamp(50, 600))),
+            ]),
+          ),
+        // barra de edição da âncora
+        if (c.editMode && snap != null)
+          Positioned(
+            left: 10, right: 10, bottom: 10,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+              decoration: BoxDecoration(color: SB.bg.withOpacity(0.86), borderRadius: BorderRadius.circular(12), border: Border.all(color: SB.greenSoft)),
+              child: Row(children: [
+                Expanded(
+                  child: Text.rich(TextSpan(
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, height: 1.3),
+                    children: [
+                      const TextSpan(text: 'Arraste a âncora até o ponto real. '),
+                      TextSpan(text: 'Distância até o barco: ${snap.distance.round()} m', style: const TextStyle(color: SB.green)),
+                    ],
+                  )),
+                ),
+                const SizedBox(width: 10),
+                GestureDetector(
+                  onTap: c.finishEdit,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    decoration: BoxDecoration(color: SB.green, borderRadius: BorderRadius.circular(9)),
+                    child: const Text('Concluir', style: TextStyle(color: SB.bg, fontWeight: FontWeight.w700, fontSize: 12)),
+                  ),
+                ),
+              ]),
+            ),
+          ),
+      ]),
+      if (c.canEdit)
+        Padding(
+          padding: const EdgeInsets.only(top: 10),
+          child: GestureDetector(
+            onTap: c.startEdit,
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: SB.green.withOpacity(0.55), width: 1.5, style: BorderStyle.solid),
+              ),
+              alignment: Alignment.center,
+              child: const Text('✎ Editar posição da âncora', style: TextStyle(color: SB.green, fontSize: 14, fontWeight: FontWeight.w600)),
+            ),
+          ),
+        ),
     ]);
   }
 
@@ -358,12 +412,12 @@ class _AnchorScreenState extends State<AnchorScreen> {
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(color: SB.card3, borderRadius: BorderRadius.circular(11)),
           child: const Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('⚙️  '),
-            Expanded(child: Text('Dê ré devagar contra a âncora para cravá-la. Quando estiver seguro, ative a vigília.', style: TextStyle(fontSize: 12, color: SB.muted, height: 1.4))),
+            Text('📍  '),
+            Expanded(child: Text('Arraste a âncora no mapa até onde ela caiu no fundo. Toque nela para ver a distância até o barco. Depois, ative a vigília.', style: TextStyle(fontSize: 12, color: SB.muted, height: 1.4))),
           ]),
         ),
         const SizedBox(height: 10),
-        _pill('Âncora cravada — vigiar', c.finishSetting, green: true),
+        _pill('Ativar vigília', c.finishSetting, green: true),
       ]);
     }
     if (st == AnchorState.alarm || st == AnchorState.prealarm) {

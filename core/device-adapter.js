@@ -63,6 +63,7 @@
     /** avança N segundos de mar de uma vez (para "pré-encher" rastro) */
     warmup(seconds) { let f = null; for (let i = 0; i < seconds * this.hz; i++) f = this.boat.step(1 / this.hz); return f }
     start(onFix) {
+      this.stop() // idempotente: nunca deixa dois timers rodando
       this.onFix = onFix
       const period = 1000 / (this.speed * this.hz)
       const tick = () => { this.onFix(this.boat.step(1 / this.hz)) }

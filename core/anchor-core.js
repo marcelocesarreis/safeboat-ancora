@@ -307,8 +307,8 @@
     }
 
     /**
-     * Define a âncora manualmente (usuário arrastou o pino no mapa, ou informou
-     * rumo+distância a partir da posição atual).
+     * Define a âncora manualmente e REINICIA o quadro de referência (usado antes
+     * de qualquer fix — testes, estimativa retroativa). Limpa o rastro.
      */
     setAnchor(pos, source) {
       this.anchor = { lat: pos.lat, lon: pos.lon }
@@ -319,6 +319,37 @@
       this.maxRadiusSeen = 0
       this._event('ancora', 'Posição da âncora ajustada')
       return this.anchor
+    }
+
+    /**
+     * Reposiciona a âncora SEM perder o rastro nem o quadro de referência —
+     * usado quando o usuário ARRASTA o pino no mapa (o caso comum: ligar o
+     * alarme depois de já fundeado e mover a âncora até o ponto real no fundo).
+     *
+     * O rastro é gravado no quadro `ref` (fixo desde o lançamento), então mover
+     * a âncora só muda de onde as distâncias são medidas — a nuvem de posições
+     * continua íntegra. Zera o que dependia da âncora antiga (deriva, tempo fora,
+     * maior afastamento) para não disparar alarme por causa do reposicionamento.
+     */
+    moveAnchor(pos) {
+      if (!this.ref) this.ref = { lat: pos.lat, lon: pos.lon }
+      this.anchor = { lat: pos.lat, lon: pos.lon }
+      this.anchorOrigin = { lat: pos.lat, lon: pos.lon }
+      this.anchorSource = 'manual'
+      this.outsideSince = null
+      this.driftRef = null
+      this.driftLostAt = null
+      this._noDrift()
+      this.maxRadiusSeen = 0
+      return this.anchor
+    }
+
+    /** distância linear (m) da âncora até o barco, para uma posição de âncora
+     * hipotética (usado enquanto o usuário arrasta o pino). */
+    anchorToBoat(anchorPos) {
+      const boat = this.lastFix ? this._bowPosition(this.lastFix) : null
+      if (!boat) return 0
+      return distance(anchorPos, boat)
     }
 
     /**
@@ -678,16 +709,33 @@
     snapshot() {
       const last = this.track[this.track.length - 1]
       const R = this.radius
+      // posição da proa: do rastro filtrado se houver, senão do fix atual — assim
+      // a distância fica correta mesmo SEM rastro (ex.: acabou de lançar e o mar
+      // está pausado enquanto o usuário ARRASTA a âncora).
+      let boatLocal = null
+      if (last) boatLocal = { x: last.x, y: last.y }
+      else if (this.lastFix && this.ref) boatLocal = toLocal(this.ref, this._bowPosition(this.lastFix))
+      // distância/rumo recomputados contra a âncora ATUAL (vale entre fixes)
+      let dist = 0, brg = 0
+      if (boatLocal && this.anchor && this.ref) {
+        const al = toLocal(this.ref, this.anchor)
+        const dx = boatLocal.x - al.x, dy = boatLocal.y - al.y
+        dist = Math.hypot(dx, dy)
+        brg = (Math.atan2(dx, dy) * R2D + 360) % 360
+      }
+      const posGeo = last ? fromLocal(this.ref, last)
+        : (this.lastFix && this.ref ? this._bowPosition(this.lastFix)
+          : (this.lastFix ? { lat: this.lastFix.lat, lon: this.lastFix.lon } : null))
       return {
         state: this.state,
         anchor: this.anchor,
         anchorSource: this.anchorSource,
         radius: R,
         scope: scopeRatio(this.cfg),
-        position: last ? fromLocal(this.ref, last) : (this.lastFix ? { lat: this.lastFix.lat, lon: this.lastFix.lon } : null),
-        distance: last ? last.r : 0,
-        bearing: last ? last.brg : 0,
-        usage: last ? Math.min(1.5, last.r / R) : 0,
+        position: posGeo,
+        distance: dist,
+        bearing: brg,
+        usage: Math.min(1.5, dist / R),
         maxRadiusSeen: this.maxRadiusSeen,
         drift: this.drift,
         fitted: this.fitted,

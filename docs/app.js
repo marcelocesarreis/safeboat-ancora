@@ -23,10 +23,17 @@ let armed = false
 let viewSpan = 140       // metros de largura do mapa (zoom)
 let toastShown = false
 let pendingRadius = null
+// --- edição/arraste da âncora ---
+let editMode = false     // usuário pode arrastar o pino da âncora
+let dragging = false     // arraste em andamento
+let dragCenter = null    // centro do mapa congelado durante a edição
+let showAnchorDist = false // mostra o balão de distância ao tocar na âncora
+let anchorDistTimer = null
+let mapCenter = null, mapMpp = 1 // projeção atual (para inverter clique→lat/lon)
 
 const STATE_LABELS = {
   idle:     { sub: 'Âncora não lançada',          main: 'Alarme de âncora inativo',  cls: 'idle',     tag: ['grey', 'Inativo'] },
-  setting:  { sub: 'Verificando aguante',          main: 'Cravando a âncora…',        cls: 'idle',     tag: ['amber', 'Testando'] },
+  setting:  { sub: 'Posicione a âncora',           main: 'Ajustando a âncora…',       cls: 'idle',     tag: ['amber', 'Ajustando'] },
   armed:    { sub: 'Vigiando o fundeio',           main: 'Alarme de âncora Ativo',    cls: '',         tag: ['green', 'Protegido'] },
   prealarm: { sub: 'Atenção',                       main: 'Encostando no limite',      cls: 'pre',      tag: ['amber', 'Atenção'] },
   alarm:    { sub: 'EMERGÊNCIA',                    main: 'GARRANDO — barco à deriva', cls: 'alarm',    tag: ['red', 'Garrando'] },
@@ -41,8 +48,75 @@ function boot() {
   // pré-enche ~2 min de rastro para o mapa já nascer com movimento
   adapter.warmup(90)
   renderActions()
+  installMapPointer()
   adapter.start(onFix)
   setInterval(tickClock, 1000)
+}
+
+// -------------------------------------------------- arraste/toque na âncora
+
+/** converte um evento de ponteiro (px na tela) para lat/lon usando a projeção
+ * atual do mapa (mapCenter/mapMpp guardados no último drawMap). */
+function eventToLatLon(ev) {
+  const svg = document.getElementById('map')
+  const rect = svg.getBoundingClientRect()
+  const sx = ((ev.clientX - rect.left) / rect.width) * 400
+  const sy = ((ev.clientY - rect.top) / rect.height) * 400
+  const local = { x: (sx - 200) * mapMpp, y: (200 - sy) * mapMpp }
+  return { latlon: fromLocal(mapCenter, local), sx, sy }
+}
+
+/** posição do pino da âncora em coordenadas de tela (0..400) */
+function anchorScreenPos() {
+  if (!watch.anchor || !mapCenter) return null
+  const l = toLocal(mapCenter, watch.anchor)
+  return { x: 200 + l.x / mapMpp, y: 200 - l.y / mapMpp }
+}
+
+function installMapPointer() {
+  const svg = document.getElementById('map')
+  let downAt = null
+
+  svg.addEventListener('pointerdown', (ev) => {
+    if (!watch.anchor) return
+    const p = eventToLatLon(ev)
+    const a = anchorScreenPos()
+    if (!a) return
+    const hit = Math.hypot(p.sx - a.x, p.sy - a.y) < 34
+    if (!hit) return
+    ev.preventDefault()
+    downAt = { sx: p.sx, sy: p.sy, moved: false }
+    if (editMode) { dragging = true; if (!dragCenter) dragCenter = { lat: watch.anchor.lat, lon: watch.anchor.lon } }
+    try { svg.setPointerCapture(ev.pointerId) } catch (e) {}
+  })
+
+  svg.addEventListener('pointermove', (ev) => {
+    if (!downAt) return
+    const p = eventToLatLon(ev)
+    if (Math.hypot(p.sx - downAt.sx, p.sy - downAt.sy) > 4) downAt.moved = true
+    if (dragging) {
+      ev.preventDefault()
+      watch.moveAnchor(p.latlon)
+      updateEditHint()
+      if (lastFix) render(watch.snapshot(), lastFix)
+    }
+  })
+
+  const end = (ev) => {
+    if (!downAt) return
+    try { svg.releasePointerCapture(ev.pointerId) } catch (e) {}
+    // toque sem arrastar em cima da âncora → mostra a distância por alguns segundos
+    if (!downAt.moved) {
+      showAnchorDist = true
+      clearTimeout(anchorDistTimer)
+      anchorDistTimer = setTimeout(() => { showAnchorDist = false; if (lastFix) render(watch.snapshot(), lastFix) }, 3500)
+    }
+    dragging = false
+    downAt = null
+    if (lastFix) render(watch.snapshot(), lastFix)
+  }
+  svg.addEventListener('pointerup', end)
+  svg.addEventListener('pointercancel', end)
 }
 
 function tickClock() {
@@ -90,8 +164,13 @@ function selectScenario(key) {
   armed = false
   toastShown = false
   hideToast()
+  editMode = false; dragging = false; dragCenter = null; showAnchorDist = false
+  document.getElementById('editHint').classList.add('hidden')
+  document.getElementById('mapWrap').classList.remove('editing')
+  cfg.alarmRadius = null
   watch = new AnchorWatch(cfg)
   adapter.warmup(90)
+  if (playing) adapter.start(onFix)  // setScenario faz reset; garante o mar rodando
   buildScenarioBar()
   renderActions()
 }
@@ -126,10 +205,10 @@ function renderActions() {
   } else if (st === 'setting') {
     el.innerHTML = `
       <div class="cfg-note" style="margin:14px 0 0">
-        <span>⚙️</span>
-        <span>Dê ré devagar contra a âncora para cravá-la. O SAFEBOAT confirma o aguante pelo esforço da amarra. Quando estiver seguro, ative a vigília.</span>
+        <span>📍</span>
+        <span>Arraste a âncora no mapa até onde ela caiu no fundo. Toque nela para ver a distância até o barco. Depois, ative a vigília.</span>
       </div>
-      <button class="pill-btn green" onclick="finishSetting()">Âncora cravada — vigiar</button>`
+      <button class="pill-btn green" onclick="finishSetting()">Ativar vigília</button>`
   } else if (st === 'alarm' || st === 'prealarm') {
     el.innerHTML = `<div class="btn-row">
         <button class="pill-btn" onclick="ack()">Reconhecer</button>
@@ -138,12 +217,16 @@ function renderActions() {
   } else {
     el.innerHTML = `<button class="pill-btn ghost-red" onclick="disarm()">🔕 DESATIVAR ALARME</button>`
   }
+  // botão de editar âncora: disponível quando há âncora e não estamos editando
+  const editBtn = document.getElementById('editAnchorBtn')
+  const canEdit = !!watch.anchor && (st === 'armed' || st === 'prealarm' || st === 'alarm') && !editMode
+  editBtn.classList.toggle('hidden', !canEdit)
 }
 
-function finishSetting() { armed = true; watch.arm(); renderActions() }
+function finishSetting() { armed = true; watch.arm(); finishEdit(); renderActions() }
 
 function disarm() {
-  watch.disarm(); armed = false; toastShown = false; hideToast(); renderActions()
+  watch.disarm(); armed = false; toastShown = false; hideToast(); finishEdit(); renderActions()
 }
 
 function ack() { watch.acknowledge(); hideToast(); toastShown = false; renderActions() }
@@ -164,17 +247,16 @@ function closeSheet() {
 function syncSheetInputs() {
   document.getElementById('fRode').value = cfg.rodeLength
   document.getElementById('fDepth').value = cfg.depth
-  document.getElementById('fBoat').value = cfg.boatLength
-  document.getElementById('fMargin').value = cfg.gpsMargin
-  ;['fRode', 'fDepth', 'fBoat', 'fMargin'].forEach(id => {
+  // comprimento do barco vem da base SAFEBOAT (não é digitado)
+  document.getElementById('boatLenLbl').textContent = cfg.boatLength.toFixed(1).replace('.', ',') + ' m'
+  ;['fRode', 'fDepth'].forEach(id => {
     document.getElementById(id).oninput = () => { readSheetInputs(); updateSheet() }
   })
 }
 function readSheetInputs() {
   cfg.rodeLength = +document.getElementById('fRode').value || 0
   cfg.depth = +document.getElementById('fDepth').value || 0
-  cfg.boatLength = +document.getElementById('fBoat').value || 0
-  cfg.gpsMargin = +document.getElementById('fMargin').value || 0
+  // boatLength e gpsMargin vêm da base SAFEBOAT (mantidos nos defaults do cfg)
   pendingRadius = null   // volta a seguir o cálculo automático
 }
 
@@ -203,7 +285,47 @@ function confirmArm() {
   // âncora na posição atual do barco, projetada para a proa (lançamento agora)
   if (lastFix) watch.dropAnchor(lastFix)
   closeSheet()
+  // caso comum: já está fundeado — entra direto no modo de arrastar a âncora
+  // até o ponto real no fundo antes de ativar a vigília.
+  startEdit()
   renderActions()
+}
+
+// ------------------------------------------------------- edição da âncora
+
+/** entra no modo de arrastar a âncora (congela o mapa e pausa a simulação para
+ * o barco ficar parado enquanto você posiciona a âncora) */
+function startEdit() {
+  if (!watch.anchor) return
+  editMode = true
+  adapter.stop()   // congela o barco durante o posicionamento
+  dragCenter = { lat: watch.anchor.lat, lon: watch.anchor.lon }
+  document.getElementById('mapWrap').classList.add('editing')
+  document.getElementById('editHint').classList.remove('hidden')
+  updateEditHint()
+  renderActions()
+  if (lastFix) render(watch.snapshot(), lastFix)
+}
+
+/** sai do modo de edição (retoma a simulação se estava rodando) */
+function finishEdit() {
+  const was = editMode
+  editMode = false
+  dragging = false
+  dragCenter = null
+  const hint = document.getElementById('editHint')
+  const wrap = document.getElementById('mapWrap')
+  if (hint) hint.classList.add('hidden')
+  if (wrap) wrap.classList.remove('editing')
+  if (was && playing) adapter.start(onFix) // retoma o mar
+  renderActions()
+  if (lastFix) render(watch.snapshot(), lastFix)
+}
+
+function updateEditHint() {
+  const d = watch.snapshot().distance
+  document.getElementById('editHintTxt').innerHTML =
+    `Arraste a âncora até o ponto real. <b>Distância até o barco: ${Math.round(d)} m</b>`
 }
 
 // ------------------------------------------------------------------ render
@@ -315,11 +437,13 @@ function zoom(f) { viewSpan = Math.max(50, Math.min(600, viewSpan / f)); if (las
 function drawMap(snap, fix) {
   const svg = document.getElementById('map')
   const S = 400
-  // centro do mapa: âncora se existir, senão o barco
+  // centro do mapa: congelado durante a edição (para arrastar sem o mapa fugir),
+  // senão a âncora, senão o barco
   const truthAnchor = adapter.boat ? adapter.boat.truthAnchorLatLon() : null
-  const center = snap.anchor || snap.position || { lat: fix.lat, lon: fix.lon }
+  const center = dragCenter || snap.anchor || snap.position || { lat: fix.lat, lon: fix.lon }
   const mpp = viewSpan / S   // metros por pixel
   const ref = center
+  mapCenter = center; mapMpp = mpp   // guarda a projeção para inverter clique→lat/lon
   const P = (ll) => {
     const l = toLocal(ref, ll)
     return { x: S / 2 + l.x / mpp, y: S / 2 - l.y / mpp }
@@ -367,8 +491,23 @@ function drawMap(snap, fix) {
       out += `<circle cx="${ex}" cy="${ey}" r="4" fill="#E0524B"/>`
     }
 
-    // pino da âncora
+    // pino da âncora (realçado durante a edição)
+    if (editMode) {
+      out += `<circle cx="${a.x}" cy="${a.y}" r="26" fill="rgba(165,203,116,.15)" stroke="#A5CB74" stroke-width="1.5" stroke-dasharray="3 3"/>`
+    }
     out += anchorPin(a.x, a.y)
+
+    // balão de distância âncora→barco (na edição ou ao tocar na âncora)
+    if ((editMode || showAnchorDist) && snap.position) {
+      const b = P(snap.position)
+      const midx = (a.x + b.x) / 2, midy = (a.y + b.y) / 2
+      const label = `${Math.round(snap.distance)} m`
+      const w = label.length * 8 + 16
+      out += `<g>
+        <rect x="${midx - w / 2}" y="${midy - 12}" width="${w}" height="22" rx="11" fill="#0e1526" fill-opacity=".85" stroke="#A5CB74" stroke-width="1"/>
+        <text x="${midx}" y="${midy + 3}" fill="#fff" font-size="12" font-weight="700" text-anchor="middle">${label}</text>
+      </g>`
+    }
 
     // "âncora real" da simulação (fantasma) — para comparar visualmente com a estimada
     if (truthAnchor) {

@@ -76,6 +76,12 @@
   .map-badge .k{color:var(--muted);font-weight:500}
   .map-controls{position:absolute;bottom:10px;right:10px;display:flex;flex-direction:column;gap:6px}
   .map-controls button{width:34px;height:34px;border-radius:9px;border:none;background:rgba(14,21,38,.8);color:#fff;font-size:16px;font-weight:700;cursor:pointer}
+  #map{touch-action:none}
+  .map-wrap.editing{outline:2px solid var(--green);outline-offset:-2px}
+  .edit-hint{position:absolute;left:10px;right:10px;bottom:10px;background:rgba(14,21,38,.86);backdrop-filter:blur(5px);border-radius:12px;padding:9px 12px;display:flex;align-items:center;gap:10px;border:1px solid var(--green-soft)}
+  .edit-hint .txt{flex:1;font-size:12px;font-weight:600;line-height:1.3}
+  .edit-hint button{background:var(--green);color:#1E2A49;border:none;font-family:inherit;font-weight:700;font-size:12px;padding:8px 14px;border-radius:9px;cursor:pointer;flex-shrink:0}
+  .edit-anchor-btn{width:100%;margin-top:10px;padding:12px;border-radius:12px;background:transparent;border:1.5px dashed rgba(165,203,116,.55);color:var(--green);font-family:inherit;font-size:14px;font-weight:600;cursor:pointer}
 
   /* ---------- métricas ---------- */
   .metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin:14px 0 2px}
@@ -127,6 +133,10 @@
   .slider-row .lbl b{color:#fff;font-size:16px}
   input[type=range]{width:100%;-webkit-appearance:none;height:6px;border-radius:4px;background:linear-gradient(90deg,var(--green) var(--pct,50%),var(--card-3) var(--pct,50%));outline:none}
   input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:24px;height:24px;border-radius:50%;background:var(--green);border:3px solid #243a63;cursor:pointer}
+  .boat-chip{display:flex;align-items:center;gap:11px;background:var(--card-3);border-radius:12px;padding:10px 13px;margin-bottom:12px}
+  .boat-chip .ic{width:38px;height:38px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;font-size:19px;flex-shrink:0}
+  .boat-chip .bt{font-size:14px;font-weight:600}
+  .boat-chip .bs{font-size:11px;color:var(--muted);margin-top:1px}
   .cfg-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:6px 0 12px}
   .cfg-field{background:var(--card-3);border-radius:11px;padding:9px 12px}
   .cfg-field .k{font-size:10.5px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.03em}
@@ -216,7 +226,7 @@
     </div>
 
     <!-- mapa -->
-    <div class="map-wrap">
+    <div class="map-wrap" id="mapWrap">
       <svg id="map" viewBox="0 0 400 400"></svg>
       <div class="map-badges">
         <div class="map-badge" id="badgeDist"><span class="k">dist.</span> <b>—</b></div>
@@ -226,7 +236,14 @@
         <button onclick="zoom(1.3)">+</button>
         <button onclick="zoom(.77)">−</button>
       </div>
+      <!-- barra de edição da âncora -->
+      <div class="edit-hint hidden" id="editHint">
+        <span class="txt" id="editHintTxt">Arraste a âncora até o ponto real no fundo</span>
+        <button id="editDone" onclick="finishEdit()">Concluir</button>
+      </div>
     </div>
+    <!-- botão para reabrir a edição depois de armado -->
+    <button class="edit-anchor-btn hidden" id="editAnchorBtn" onclick="startEdit()">✎ Editar posição da âncora</button>
 
     <!-- métricas -->
     <div class="metrics" id="metrics"></div>
@@ -251,19 +268,26 @@
   <div class="sheet-back" id="sheetBack" onclick="closeSheet()"></div>
   <div class="sheet" id="sheet">
     <div class="grab"></div>
-    <h3>Configurar raio do alarme</h3>
+    <h3>Configurar fundeio</h3>
     <div class="mini-map"><svg id="miniMap" viewBox="0 0 400 275"></svg></div>
 
+    <!-- dados do barco: vêm da base SAFEBOAT, não são digitados -->
+    <div class="boat-chip">
+      <span class="ic">🛥️</span>
+      <div>
+        <div class="bt">MAGNA 260 · <b id="boatLenLbl">8,0 m</b></div>
+        <div class="bs">Comprimento e antena vêm da base SAFEBOAT</div>
+      </div>
+    </div>
+
     <div class="cfg-grid">
-      <div class="cfg-field"><div class="k">Amarra lançada</div><div class="in"><input id="fRode" type="number" value="40"><span class="u">m</span></div></div>
-      <div class="cfg-field"><div class="k">Profundidade</div><div class="in"><input id="fDepth" type="number" value="6"><span class="u">m</span></div></div>
-      <div class="cfg-field"><div class="k">Comp. do barco</div><div class="in"><input id="fBoat" type="number" value="8"><span class="u">m</span></div></div>
-      <div class="cfg-field"><div class="k">Folga GPS</div><div class="in"><input id="fMargin" type="number" value="5"><span class="u">m</span></div></div>
+      <div class="cfg-field"><div class="k">Amarra lançada</div><div class="in"><input id="fRode" type="number" inputmode="decimal" value="40"><span class="u">m</span></div></div>
+      <div class="cfg-field"><div class="k">Profundidade</div><div class="in"><input id="fDepth" type="number" inputmode="decimal" value="6"><span class="u">m</span></div></div>
     </div>
 
     <div class="cfg-note">
       <span>ℹ️</span>
-      <span>Relação de fundeio (scope) <span class="scope" id="scopeVal">6,7:1</span> — recomendado 5:1 a 7:1. O raio abaixo já soma o alcance da amarra, o comprimento do barco e a folga de GPS.</span>
+      <span>Relação de fundeio (scope) <span class="scope" id="scopeVal">6,7:1</span> — recomendado 5:1 a 7:1. O raio já considera o alcance da amarra e o comprimento do barco.</span>
     </div>
 
     <div class="slider-row">
@@ -271,7 +295,7 @@
       <input id="radiusSlider" type="range" min="15" max="120" value="52" oninput="onRadiusInput(this.value)">
     </div>
 
-    <button class="pill-btn green" onclick="confirmArm()">Confirmar e ativar</button>
+    <button class="pill-btn green" onclick="confirmArm()">Lançar âncora aqui</button>
     <button class="pill-btn" style="margin-top:8px" onclick="closeSheet()">Cancelar</button>
   </div>
 </div>

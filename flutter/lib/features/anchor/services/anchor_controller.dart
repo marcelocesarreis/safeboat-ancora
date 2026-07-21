@@ -27,6 +27,11 @@ class AnchorController extends ChangeNotifier {
   GpsFix? lastFix;
   double? pendingRadius; // raio ajustado no slider antes de confirmar
 
+  // --- edição/arraste da âncora ---
+  bool editMode = false;
+  Geo? dragCenter; // centro do mapa congelado durante a edição
+  bool showAnchorDist = false;
+
   AnchorSnapshot? snapshot;
 
   AnchorController() {
@@ -63,10 +68,14 @@ class AnchorController extends ChangeNotifier {
     scenario = key;
     armed = false;
     pendingRadius = null;
+    editMode = false;
+    dragCenter = null;
+    showAnchorDist = false;
     cfg.alarmRadius = null; // cada cenário é um novo fundeio; raio volta ao cálculo
     _sim.setScenario(key);
     watch = AnchorWatch(cfg); // compartilha o mesmo cfg
     _sim.warmup(90);
+    if (playing) _sim.start(_onFix);
     snapshot = watch.snapshot();
     notifyListeners();
   }
@@ -97,6 +106,8 @@ class AnchorController extends ChangeNotifier {
     // basta aplicar o raio escolhido e lançar a âncora.
     cfg.alarmRadius = pendingRadius;
     if (lastFix != null) watch.dropAnchor(lastFix!);
+    // caso comum: já fundeado — entra direto no arraste da âncora até o ponto real
+    startEdit();
     snapshot = watch.snapshot();
     notifyListeners();
   }
@@ -104,6 +115,7 @@ class AnchorController extends ChangeNotifier {
   void finishSetting() {
     armed = true;
     watch.arm();
+    finishEdit();
     snapshot = watch.snapshot();
     notifyListeners();
   }
@@ -111,6 +123,45 @@ class AnchorController extends ChangeNotifier {
   void disarm() {
     watch.disarm();
     armed = false;
+    finishEdit();
+    snapshot = watch.snapshot();
+    notifyListeners();
+  }
+
+  // ---- edição/arraste da âncora ----
+  bool get canEdit =>
+      watch.anchor != null &&
+      !editMode &&
+      (watch.state == AnchorState.armed ||
+          watch.state == AnchorState.prealarm ||
+          watch.state == AnchorState.alarm);
+
+  /// Entra no modo de arrastar a âncora (congela o mapa e pausa a simulação).
+  void startEdit() {
+    if (watch.anchor == null) return;
+    editMode = true;
+    _sim.stop(); // congela o barco durante o posicionamento
+    dragCenter = watch.anchor;
+    notifyListeners();
+  }
+
+  void finishEdit() {
+    final was = editMode;
+    editMode = false;
+    dragCenter = null;
+    if (was && playing) _sim.start(_onFix); // retoma o mar
+    notifyListeners();
+  }
+
+  /// Arrasta a âncora para [pos] (mantém rastro e quadro de referência).
+  void moveAnchor(Geo pos) {
+    watch.moveAnchor(pos);
+    snapshot = watch.snapshot();
+    notifyListeners();
+  }
+
+  void tapAnchor() {
+    showAnchorDist = true;
     snapshot = watch.snapshot();
     notifyListeners();
   }
@@ -125,11 +176,10 @@ class AnchorController extends ChangeNotifier {
   double get autoRadius => cfg.radius;
   double get effectiveRadius => pendingRadius ?? cfg.radius;
 
-  void updateConfig({double? rode, double? depth, double? boat, double? margin}) {
+  void updateConfig({double? rode, double? depth}) {
+    // comprimento do barco e folga de GPS vêm da base SAFEBOAT (não editáveis)
     if (rode != null) cfg.rodeLength = rode;
     if (depth != null) cfg.depth = depth;
-    if (boat != null) cfg.boatLength = boat;
-    if (margin != null) cfg.gpsMargin = margin;
     pendingRadius = null; // volta ao cálculo automático
     notifyListeners();
   }

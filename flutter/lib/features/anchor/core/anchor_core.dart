@@ -304,6 +304,8 @@ class AnchorWatch {
     return anchor!;
   }
 
+  /// Define a âncora e REINICIA o quadro de referência (antes de qualquer fix —
+  /// testes, estimativa retroativa). Limpa o filtro.
   Geo setAnchor(Geo pos, [String? source]) {
     anchor = pos;
     if (source != 'ajuste-arco') anchorOrigin = pos;
@@ -313,6 +315,32 @@ class AnchorWatch {
     maxRadiusSeen = 0;
     _event('ancora', 'Posição da âncora ajustada');
     return anchor!;
+  }
+
+  /// Reposiciona a âncora SEM perder o rastro nem o quadro de referência — o
+  /// caso comum: ligar o alarme já fundeado e ARRASTAR o pino até o ponto real
+  /// no fundo. O rastro é gravado no quadro `ref` (fixo desde o lançamento),
+  /// então mover a âncora só muda de onde as distâncias são medidas. Zera o que
+  /// dependia da âncora antiga para não alarmar por causa do reposicionamento.
+  Geo moveAnchor(Geo pos) {
+    ref ??= pos;
+    anchor = pos;
+    anchorOrigin = pos;
+    anchorSource = 'manual';
+    outsideSince = null;
+    driftRef = null;
+    driftLostAt = null;
+    driftRefT = null;
+    _noDrift();
+    maxRadiusSeen = 0;
+    return anchor!;
+  }
+
+  /// Distância linear (m) de uma posição de âncora hipotética até o barco (usado
+  /// enquanto o usuário arrasta o pino).
+  double anchorToBoat(Geo anchorPos) {
+    if (lastFix == null) return 0;
+    return distance(anchorPos, _bowPosition(lastFix!));
   }
 
   /// Estima a âncora a partir de um rastro já gravado (dispositivo de bordo
@@ -617,16 +645,35 @@ class AnchorWatch {
   AnchorSnapshot snapshot() {
     final last = track.isNotEmpty ? track.last : null;
     final rr = radius;
+    // posição da proa: do rastro se houver, senão do fix atual — distância
+    // correta mesmo SEM rastro (ex.: acabou de lançar e o mar está pausado
+    // enquanto o usuário ARRASTA a âncora).
+    Vec? boatLocal;
+    if (last != null) {
+      boatLocal = Vec(last.x, last.y);
+    } else if (lastFix != null && ref != null) {
+      boatLocal = toLocal(ref!, _bowPosition(lastFix!));
+    }
+    var dist = 0.0, brg = 0.0;
+    if (boatLocal != null && anchor != null && ref != null) {
+      final al = toLocal(ref!, anchor!);
+      final dx = boatLocal.x - al.x, dy = boatLocal.y - al.y;
+      dist = math.sqrt(dx * dx + dy * dy);
+      brg = (math.atan2(dx, dy) * r2d + 360) % 360;
+    }
+    final Geo? posGeo = last != null
+        ? fromLocal(ref!, Vec(last.x, last.y))
+        : (lastFix != null && ref != null ? _bowPosition(lastFix!) : lastFix?.geo);
     return AnchorSnapshot(
       state: state,
       anchor: anchor,
       anchorSource: anchorSource,
       radius: rr,
       scope: cfg.scope,
-      position: last != null ? fromLocal(ref!, Vec(last.x, last.y)) : lastFix?.geo,
-      distance: last?.r ?? 0.0,
-      bearing: last?.brg ?? 0.0,
-      usage: last != null ? math.min(1.5, last.r / rr) : 0.0,
+      position: posGeo,
+      distance: dist,
+      bearing: brg,
+      usage: math.min(1.5, dist / rr),
       maxRadiusSeen: maxRadiusSeen,
       drift: drift,
       outsideFor: (outsideSince != null && last != null) ? ((last.t - outsideSince!) / 1000).round() : 0,

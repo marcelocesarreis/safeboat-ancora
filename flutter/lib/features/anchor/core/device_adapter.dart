@@ -78,6 +78,7 @@ class SimAdapter implements DeviceAdapter {
 
   @override
   void start(void Function(GpsFix) onFix) {
+    stop(); // idempotente: nunca deixa dois timers rodando
     _onFix = onFix;
     final periodMs = (1000 / (speed * hz)).round();
     _timer = Timer.periodic(Duration(milliseconds: periodMs < 8 ? 8 : periodMs), (_) {

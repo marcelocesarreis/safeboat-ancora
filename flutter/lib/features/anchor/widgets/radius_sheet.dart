@@ -32,8 +32,6 @@ class _RadiusSheet extends StatefulWidget {
 class _RadiusSheetState extends State<_RadiusSheet> {
   late final TextEditingController _rode;
   late final TextEditingController _depth;
-  late final TextEditingController _boat;
-  late final TextEditingController _margin;
 
   AnchorController get c => widget.c;
 
@@ -42,25 +40,20 @@ class _RadiusSheetState extends State<_RadiusSheet> {
     super.initState();
     _rode = TextEditingController(text: c.cfg.rodeLength.toStringAsFixed(0));
     _depth = TextEditingController(text: c.cfg.depth.toStringAsFixed(0));
-    _boat = TextEditingController(text: c.cfg.boatLength.toStringAsFixed(0));
-    _margin = TextEditingController(text: c.cfg.gpsMargin.toStringAsFixed(0));
   }
 
   @override
   void dispose() {
     _rode.dispose();
     _depth.dispose();
-    _boat.dispose();
-    _margin.dispose();
     super.dispose();
   }
 
   void _readInputs() {
+    // comprimento do barco e folga de GPS vêm da base SAFEBOAT (não digitados)
     c.updateConfig(
       rode: double.tryParse(_rode.text) ?? c.cfg.rodeLength,
       depth: double.tryParse(_depth.text) ?? c.cfg.depth,
-      boat: double.tryParse(_boat.text) ?? c.cfg.boatLength,
-      margin: double.tryParse(_margin.text) ?? c.cfg.gpsMargin,
     );
     setState(() {});
   }
@@ -86,7 +79,7 @@ class _RadiusSheetState extends State<_RadiusSheet> {
               ),
             ),
             const SizedBox(height: 16),
-            const Text('Configurar raio do alarme', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700)),
+            const Text('Configurar fundeio', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700)),
             const SizedBox(height: 14),
             ClipRRect(
               borderRadius: BorderRadius.circular(14),
@@ -96,16 +89,26 @@ class _RadiusSheetState extends State<_RadiusSheet> {
               ),
             ),
             const SizedBox(height: 16),
+            // dados do barco: vêm da base SAFEBOAT, não são digitados
+            Container(
+              padding: const EdgeInsets.all(11),
+              decoration: BoxDecoration(color: SB.card3, borderRadius: BorderRadius.circular(12)),
+              child: Row(children: [
+                Container(width: 38, height: 38, decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle), alignment: Alignment.center, child: const Text('🛥️', style: TextStyle(fontSize: 19))),
+                const SizedBox(width: 11),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text('MAGNA 260 · ${c.cfg.boatLength.toStringAsFixed(1).replaceAll('.', ',')} m', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                    const Text('Comprimento e antena vêm da base SAFEBOAT', style: TextStyle(fontSize: 11, color: SB.muted)),
+                  ]),
+                ),
+              ]),
+            ),
+            const SizedBox(height: 12),
             Row(children: [
               _field('Amarra lançada', _rode, 'm'),
               const SizedBox(width: 10),
               _field('Profundidade', _depth, 'm'),
-            ]),
-            const SizedBox(height: 10),
-            Row(children: [
-              _field('Comp. do barco', _boat, 'm'),
-              const SizedBox(width: 10),
-              _field('Folga GPS', _margin, 'm'),
             ]),
             const SizedBox(height: 14),
             Container(
@@ -157,7 +160,7 @@ class _RadiusSheetState extends State<_RadiusSheet> {
                   c.confirmArm();
                   Navigator.pop(context);
                 },
-                child: const Text('Confirmar e ativar', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+                child: const Text('Lançar âncora aqui', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
               ),
             ),
             const SizedBox(height: 8),
